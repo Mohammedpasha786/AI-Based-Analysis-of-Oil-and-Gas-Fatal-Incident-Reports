@@ -1,0 +1,32 @@
+function check = validateTotals(txt, T, cfg)
+%VALIDATETOTALS Compare parsed incident and fatality totals with the totals stated in the report.
+
+expInc = cfg.expectedIncidents;
+expFat = cfg.expectedFatalities;
+if isempty(expInc) || isempty(expFat)
+    tok = regexp(char(txt), '(\d+)\s+incidents?\D{0,20}(\d+)\s+fatalit', 'tokens', 'once', 'ignorecase');
+    if ~isempty(tok)
+        expInc = str2double(tok{1});
+        expFat = str2double(tok{2});
+    end
+end
+
+parsedInc = height(T);
+parsedFat = sum(T.Deaths, "omitnan");
+missingFields = sum(ismissing(T.Date)) + sum(isnan(T.Deaths)) + sum(strlength(T.Cause) == 0) ...
+    + sum(strlength(T.Country) == 0);
+
+check = struct("ExpectedIncidents", expInc, "ParsedIncidents", parsedInc, ...
+    "ExpectedFatalities", expFat, "ParsedFatalities", parsedFat, ...
+    "MissingFields", missingFields, "Match", false);
+if ~isempty(expInc)
+    check.Match = parsedInc == expInc && parsedFat == expFat && missingFields == 0;
+    if ~check.Match
+        warning("iogp:totals", "Parsed %d incidents / %d fatalities; report states %d / %d.", ...
+            parsedInc, parsedFat, expInc, expFat);
+    end
+else
+    warning("iogp:totals", "No reported totals found. Set cfg.expectedIncidents and cfg.expectedFatalities.");
+end
+end
+
