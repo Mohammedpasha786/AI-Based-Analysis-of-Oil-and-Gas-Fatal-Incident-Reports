@@ -1,0 +1,34 @@
+function S = summarizeAttribution(T, F)
+%SUMMARIZEATTRIBUTION Tabulate People versus Process factors by cause and activity and list top factors.
+
+D = [T(:, {'Cause', 'Activity', 'Deaths'}), F(:, {'PeopleCount', 'ProcessCount', 'Attribution'})];
+allocated = D.Attribution ~= "Not allocated";
+
+S.Counts = groupsummary(D, "Attribution");
+S.ByCause = groupsummary(D(allocated, :), "Cause", "sum", {'PeopleCount', 'ProcessCount'});
+S.ByActivity = groupsummary(D(allocated, :), "Activity", "sum", {'PeopleCount', 'ProcessCount'});
+S.TotalPeople = sum(F.PeopleCount);
+S.TotalProcess = sum(F.ProcessCount);
+S.NotAllocated = sum(~allocated);
+S.TopPeopleFactor = topFactor(F.PeopleFactors);
+S.TopProcessFactor = topFactor(F.ProcessFactors);
+end
+
+function f = topFactor(col)
+items = strings(0, 1);
+for i = 1:numel(col)
+    if strlength(col(i)) > 0
+        items = [items; strip(split(col(i), " | "))]; %#ok<AGROW>
+    end
+end
+if isempty(items)
+    f = table("", 0, "VariableNames", {'Factor', 'Count'});
+    return
+end
+[u, ~, g] = unique(lower(items));
+cnt = accumarray(g, 1);
+[cnt, order] = sort(cnt, "descend");
+f = table(u(order), cnt, "VariableNames", {'Factor', 'Count'});
+f = f(1:min(5, height(f)), :);
+end
+
