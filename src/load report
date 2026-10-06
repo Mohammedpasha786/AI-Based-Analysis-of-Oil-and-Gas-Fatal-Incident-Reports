@@ -1,0 +1,32 @@
+function [txt, source] = loadReport(cfg)
+%LOADREPORT Return the report text from a PDF in data/reports, a download, or the bundled sample.
+
+txt = "";
+source = "sample";
+if ~cfg.useSampleData
+    pdf = "";
+    if strlength(cfg.pdfFile) > 0
+        pdf = fullfile(cfg.reportsDir, cfg.pdfFile);
+    end
+    if strlength(cfg.pdfUrl) > 0 && strlength(cfg.pdfFile) > 0 && ~isfile(pdf)
+        try
+            websave(pdf, cfg.pdfUrl);
+        catch ME
+            warning("iogp:download", "Download failed: %s", ME.message);
+        end
+    end
+    if strlength(pdf) > 0 && isfile(pdf)
+        txt = string(extractFileText(pdf));
+        source = pdf;
+    else
+        warning("iogp:noPdf", "PDF not found. Falling back to the bundled sample report.");
+    end
+end
+if strlength(txt) == 0
+    txt = string(fileread(cfg.sampleFile));
+    source = "sample";
+end
+txt = replace(txt, char(160), " ");
+txt = regexprep(txt, "\r\n?", "\n");
+end
+
