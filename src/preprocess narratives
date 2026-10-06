@@ -1,0 +1,19 @@
+function [docs, bag] = preprocessNarratives(T, cfg)
+%PREPROCESSNARRATIVES Tokenize, clean, and count words in the narrative and what-went-wrong text.
+
+raw = T.Narrative + " " + T.WhatWentWrong;
+docs = tokenizedDocument(raw);
+docs = lower(docs);
+docs = erasePunctuation(docs);
+docs = removeStopWords(docs);
+try
+    docs = normalizeWords(docs, "Style", "lemma");
+catch
+    docs = normalizeWords(docs);
+end
+docs = removeShortWords(docs, cfg.minWordLength - 1);
+docs = removeWords(docs, cfg.extraStopWords);
+bag = bagOfWords(docs);
+bag = removeInfrequentWords(bag, cfg.minWordCount);
+end
+
