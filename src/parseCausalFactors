@@ -1,0 +1,73 @@
+function F = parseCausalFactors(T, cfg)
+%PARSECAUSALFACTORS Count PEOPLE (ACTS) and PROCESS (CONDITIONS) factors and label each incident.
+
+n = height(T);
+people = zeros(n, 1);
+process = zeros(n, 1);
+peopleItems = strings(n, 1);
+processItems = strings(n, 1);
+allocated = false(n, 1);
+
+for i = 1:n
+    block = string(T.CausalFactors(i));
+    [pItems, qItems] = splitBlock(block, cfg);
+    people(i) = numel(pItems);
+    process(i) = numel(qItems);
+    peopleItems(i) = strjoin(pItems, " | ");
+    processItems(i) = strjoin(qItems, " | ");
+    allocated(i) = people(i) + process(i) > 0;
+end
+
+total = people + process;
+share = people ./ max(total, 1);
+attribution = repmat("Mixed", n, 1);
+attribution(share >= cfg.dominantShare) = "People-dominant";
+attribution(share <= 1 - cfg.dominantShare) = "Process-dominant";
+attribution(~allocated) = "Not allocated";
+
+F = table(people, process, share, attribution, peopleItems, processItems, ...
+    "VariableNames", {'PeopleCount', 'ProcessCount', 'PeopleShare', 'Attribution', ...
+    'PeopleFactors', 'ProcessFactors'});
+end
+
+function [pItems, qItems] = splitBlock(block, cfg)
+pItems = strings(0, 1);
+qItems = strings(0, 1);
+lines = strip(splitlines(block));
+lines = lines(strlength(lines) > 0);
+side = "";
+current = "";
+bullet = ['^([-*' char(8226) char(9642) char(61623) ']|\d+[.)])\s*'];
+for k = 1:numel(lines)
+    ln = lines(k);
+    if startsWith(upper(ln), upper(cfg.peopleHeading))
+        [pItems, qItems] = flush(pItems, qItems, side, current);
+        side = "people";
+        current = "";
+    elseif startsWith(upper(ln), upper(cfg.processHeading))
+        [pItems, qItems] = flush(pItems, qItems, side, current);
+        side = "process";
+        current = "";
+    elseif side ~= ""
+        if ~isempty(regexp(char(ln), bullet, 'once'))
+            [pItems, qItems] = flush(pItems, qItems, side, current);
+            current = string(regexprep(char(ln), bullet, ''));
+        else
+            current = strip(current + " " + ln);
+        end
+    end
+end
+[pItems, qItems] = flush(pItems, qItems, side, current);
+end
+
+function [pItems, qItems] = flush(pItems, qItems, side, current)
+if strlength(current) == 0
+    return
+end
+if side == "people"
+    pItems(end+1, 1) = current;
+elseif side == "process"
+    qItems(end+1, 1) = current;
+end
+end
+
