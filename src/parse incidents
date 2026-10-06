@@ -1,0 +1,99 @@
+function T = parseIncidents(txt, cfg)
+%PARSEINCIDENTS Split the report at each DATE field and build one table row per incident.
+
+chars = char(txt);
+
+regionPattern = "(?:" + strjoin(replace(cfg.regions, " ", "\s+"), "|") + ")";
+settingPattern = "(?:" + strjoin(cfg.settings, "|") + ")";
+headingPattern = "^[ \t]*(" + regionPattern + "|" + settingPattern + ")[ \t]*$";
+
+[hStart, hEnd, hTok] = regexp(chars, char(headingPattern), "start", "end", "tokens", "lineanchors", "ignorecase");
+headings = strings(numel(hTok), 1);
+for i = 1:numel(hTok)
+    headings(i) = upper(strip(regexprep(string(hTok{i}{1}), "\s+", " ")));
+    chars(hStart(i):hEnd(i)) = " ";
+end
+isSetting = ismember(headings, upper(cfg.settings));
+
+dateStarts = regexp(chars, "^[ \t]*DATE[ \t]*(?::|$)", "start", "lineanchors");
+n = numel(dateStarts);
+bounds = [dateStarts, numel(chars) + 1];
+
+region = strings(n, 1);
+setting = strings(n, 1);
+for k = 1:n
+    before = hStart < dateStarts(k);
+    r = find(before & ~isSetting', 1, "last");
+    s = find(before & isSetting', 1, "last");
+    if ~isempty(r)
+        region(k) = headings(r);
+    end
+    if ~isempty(s)
+        setting(k) = headings(s);
+    end
+end
+
+labelPattern = "^[ \t]*(" + strjoin(replace(cfg.fieldLabels, " ", "\s+"), "|") + ")[ \t]*(?::|$)";
+
+vars = ["Date", "Country", "Deaths", "Cause", "Activity", "LifeSavingRule", "Narrative", ...
+    "WhatWentWrong", "Corrective", "CausalFactors"];
+fields = strings(n, numel(vars));
+for k = 1:n
+    rec = chars(bounds(k):bounds(k + 1) - 1);
+    [lStart, lEnd, lTok] = regexp(rec, char(labelPattern), "start", "end", "tokens", "lineanchors");
+    for j = 1:numel(lTok)
+        name = upper(regexprep(string(lTok{j}{1}), "\s+", " "));
+        col = find(upper(cfg.fieldLabels) == name, 1);
+        if isempty(col)
+            continue
+        end
+        if j < numel(lTok)
+            stop = lStart(j + 1) - 1;
+        else
+            stop = numel(rec);
+        end
+        fields(k, col) = strip(string(rec(lEnd(j) + 1:stop)));
+    end
+end
+
+oneLine = @(s) strip(regexprep(s, "\s+", " "));
+T = table();
+T.Date = parseDate(oneLine(fields(:, 1)));
+T.Year = year(T.Date);
+T.Region = region;
+T.Setting = setting;
+T.Country = oneLine(fields(:, 2));
+T.Deaths = parseCount(fields(:, 3));
+T.Cause = oneLine(fields(:, 4));
+T.Activity = oneLine(fields(:, 5));
+T.LifeSavingRule = oneLine(fields(:, 6));
+T.Narrative = oneLine(fields(:, 7));
+T.WhatWentWrong = oneLine(fields(:, 8));
+T.Corrective = oneLine(fields(:, 9));
+T.CausalFactors = fields(:, 10);
+end
+
+function d = parseDate(s)
+d = NaT(numel(s), 1);
+formats = ["dd MMMM yyyy", "d MMMM yyyy", "MMMM d, yyyy", "dd/MM/yyyy", "yyyy-MM-dd"];
+for i = 1:numel(s)
+    for f = formats
+        try
+            d(i) = datetime(s(i), "InputFormat", f, "Locale", "en_US");
+            break
+        catch
+        end
+    end
+end
+end
+
+function c = parseCount(s)
+c = NaN(numel(s), 1);
+for i = 1:numel(s)
+    m = regexp(char(s(i)), '\d+', 'match', 'once');
+    if ~isempty(m)
+        c(i) = str2double(m);
+    end
+end
+end
+
