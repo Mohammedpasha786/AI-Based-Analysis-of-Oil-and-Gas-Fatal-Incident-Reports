@@ -1,0 +1,46 @@
+function results = runIOGPPipeline(cfg)
+%RUNIOGPPIPELINE End-to-end workflow: load, parse, check totals, clean, visualize, classify, attribute, export.
+
+if nargin < 1
+    cfg = iogpConfig();
+end
+addpath(fullfile(cfg.root, "src"));
+if ~isfolder(cfg.resultsDir)
+    mkdir(cfg.resultsDir);
+end
+
+fprintf("[1/7] Loading report\n");
+[txt, source] = loadReport(cfg);
+fprintf("      source: %s\n", source);
+
+fprintf("[2/7] Extracting incidents\n");
+T = parseIncidents(txt, cfg);
+fprintf("      %d incidents\n", height(T));
+
+fprintf("[3/7] Checking totals\n");
+check = validateTotals(txt, T, cfg);
+fprintf("      parsed %d incidents and %d fatalities (report: %s and %s)\n", check.ParsedIncidents, ...
+    check.ParsedFatalities, num2str(check.ExpectedIncidents), num2str(check.ExpectedFatalities));
+
+fprintf("[4/7] Cleaning narratives\n");
+[docs, bag] = preprocessNarratives(T, cfg);
+fprintf("      vocabulary: %d words\n", bag.NumWords);
+
+fprintf("[5/7] Classifying by keyword and by attribution\n");
+C = classifyByKeyword(T, cfg);
+F = parseCausalFactors(T, cfg);
+S = summarizeAttribution(T, F);
+
+fprintf("[6/7] Creating figures\n");
+captions = makeFigures(cfg, T, docs, bag, C, S);
+
+fprintf("[7/7] Exporting\n");
+exportResults(cfg, source, T, F, C, S, check, captions);
+
+Summary = table(height(T), sum(T.Deaths), check.Match, mean(C.Correct), S.TotalPeople, S.TotalProcess, S.NotAllocated, ...
+    "VariableNames", {'Incidents', 'Fatalities', 'TotalsMatch', 'KeywordAccuracy', 'PeopleFactors', ...
+    'ProcessFactors', 'NotAllocated'});
+results = struct("Incidents", T, "Attribution", F, "Keyword", C, "AttributionSummary", S, ...
+    "Check", check, "Captions", captions, "Summary", Summary);
+end
+
