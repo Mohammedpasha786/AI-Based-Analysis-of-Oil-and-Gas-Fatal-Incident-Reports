@@ -1,0 +1,53 @@
+function cfg = iogpConfig()
+%IOGPCONFIG Central configuration for the IOGP fatal incident analysis. Edit values here, not in main.m.
+
+root = fileparts(fileparts(mfilename("fullpath")));
+
+cfg.root = root;
+cfg.sampleFile = fullfile(root, "data", "sample", "sample_report.txt");
+cfg.coordinatesFile = fullfile(root, "data", "sample", "country_coordinates.csv");
+cfg.reportsDir = fullfile(root, "data", "reports");
+cfg.resultsDir = fullfile(root, "results");
+
+cfg.useSampleData = true;
+cfg.pdfFile = "";
+cfg.pdfUrl = "";
+
+cfg.expectedIncidents = [];
+cfg.expectedFatalities = [];
+
+cfg.regions = ["AFRICA", "ASIA PACIFIC", "ASIA", "AUSTRALASIA", "EUROPE", "FSU", "MIDDLE EAST", ...
+    "NORTH AMERICA", "SOUTH AMERICA", "LATIN AMERICA", "RUSSIA AND CENTRAL ASIA", "GLOBAL"];
+cfg.settings = ["Onshore", "Offshore"];
+
+cfg.fieldLabels = ["DATE", "COUNTRY", "NUMBER OF DEATHS", "CAUSE", "ACTIVITY", ...
+    "PRIMARY LIFE-SAVING RULE", "NARRATIVE", "WHAT WENT WRONG", ...
+    "CORRECTIVE ACTIONS AND RECOMMENDATIONS", "CAUSAL FACTORS"];
+cfg.peopleHeading = "PEOPLE (ACTS)";
+cfg.processHeading = "PROCESS (CONDITIONS)";
+cfg.dominantShare = 0.6;
+
+cfg.minWordCount = 2;
+cfg.minWordLength = 3;
+cfg.extraStopWords = ["worker", "person", "employee", "incident", "die", "death", "fatal"];
+cfg.topWords = 15;
+cfg.topCauses = 4;
+
+cfg.themeRules = themeRules();
+
+cfg.showFigures = true;
+end
+
+function t = themeRules()
+theme = ["Struck by"; "Fall from height"; "Caught in, between or under"; "Vehicle incident"; ...
+    "Explosions or burns"; "Confined space"];
+keywords = {
+    ["struck", "hit by", "dropped", "falling", "swung", "swing", "released", "suspended load"]
+    ["fell", "fall arrest", "scaffold", "harness", "rope access", "height", "ladder"]
+    ["caught", "crushed", "pinched", "trapped", "rotating shaft", "between"]
+    ["vehicle", "truck", "tanker", "collided", "collision", "overturned", "rolled", "driver", "road"]
+    ["fire", "explosion", "flame", "burn", "ignited", "flash"]
+    ["confined space", "vessel", "oxygen", "nitrogen", "entry permit", "collapsed"]};
+t = table(theme, keywords, "VariableNames", {'Theme', 'Keywords'});
+end
+
