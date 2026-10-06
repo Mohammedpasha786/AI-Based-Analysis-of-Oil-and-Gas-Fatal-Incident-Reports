@@ -1,0 +1,32 @@
+function C = classifyByKeyword(T, cfg)
+%CLASSIFYBYKEYWORD Assign each narrative the theme with the most keyword hits; flag multi-theme texts.
+
+rules = cfg.themeRules;
+n = height(T);
+nThemes = height(rules);
+scores = zeros(n, nThemes);
+text = lower(T.Narrative + " " + T.WhatWentWrong);
+
+for t = 1:nThemes
+    for kw = string(rules.Keywords{t})
+        scores(:, t) = scores(:, t) + count(text, lower(kw));
+    end
+end
+
+[best, idx] = max(scores, [], 2);
+predicted = rules.Theme(idx);
+predicted(best == 0) = "Other";
+
+multi = strings(n, 1);
+for i = 1:n
+    hit = rules.Theme(scores(i, :) > 0);
+    if numel(hit) > 1
+        multi(i) = strjoin(hit, " + ");
+    end
+end
+
+correct = predicted == T.Cause;
+C = table(predicted, best, correct, multi, "VariableNames", ...
+    {'PredictedCause', 'KeywordHits', 'Correct', 'ThemesMentioned'});
+end
+
