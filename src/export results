@@ -1,0 +1,57 @@
+function exportResults(cfg, source, T, F, C, S, check, captions)
+%EXPORTRESULTS Write the incident table, keyword errors, figure captions, and a Markdown report.
+
+out = cfg.resultsDir;
+full = [T, F, C];
+writetable(full, fullfile(out, "incidents.csv"));
+
+wrong = full(~full.Correct, {'Date', 'Country', 'Cause', 'PredictedCause', 'ThemesMentioned'});
+writetable(wrong, fullfile(out, "keyword_errors.csv"));
+writetable(captions, fullfile(out, "figure_captions.csv"));
+
+lines = ["# IOGP Fatal Incident Analysis Report"; ""; ...
+    "- Source: " + source; ...
+    "- Incidents parsed: " + check.ParsedIncidents + " (report: " + num2str(check.ExpectedIncidents) + ")"; ...
+    "- Fatalities parsed: " + check.ParsedFatalities + " (report: " + num2str(check.ExpectedFatalities) + ")"; ...
+    "- Totals match: " + string(check.Match); ""; ...
+    "## Figures"; ""];
+for i = 1:height(captions)
+    lines = [lines; "![" + captions.Figure(i) + "](" + captions.Figure(i) + ")"; ""; captions.Claim(i); ""]; %#ok<AGROW>
+end
+
+lines = [lines; "## Keyword classification"; ""; ...
+    "Accuracy against the reported CAUSE: " + sprintf("%.0f%%", 100 * mean(C.Correct)) + " (" + sum(C.Correct) + " of " + height(C) + ")."; ""];
+for i = 1:height(wrong)
+    reason = "the narrative matches only one keyword theme";
+    if strlength(wrong.ThemesMentioned(i)) > 0
+        reason = "the narrative mentions several themes (" + wrong.ThemesMentioned(i) + ") and the highest count won";
+    end
+    lines = [lines; "- " + string(wrong.Date(i), "yyyy-MM-dd") + " " + wrong.Country(i) + ": reported " + ...
+        wrong.Cause(i) + ", predicted " + wrong.PredictedCause(i) + "; " + reason + "."]; %#ok<AGROW>
+end
+
+lines = [lines; ""; "## People versus process"; ""; ...
+    "- People (acts) factors: " + S.TotalPeople; ...
+    "- Process (conditions) factors: " + S.TotalProcess; ...
+    "- Incidents without allocated causal factors: " + S.NotAllocated; ""; ...
+    "Most frequent people factor: " + describeTop(S.TopPeopleFactor); ...
+    "Most frequent process factor: " + describeTop(S.TopProcessFactor); ""; ...
+    "Attribution labels:"; ""];
+for i = 1:height(S.Counts)
+    lines = [lines; "- " + S.Counts.Attribution(i) + ": " + S.Counts.GroupCount(i)]; %#ok<AGROW>
+end
+
+lines = [lines; ""; "## Confidence"; ""; ...
+    "Factor counts reflect how investigators chose to write up each case, not a measured cause. Confidence in a People versus Process conclusion would need: many more incidents per cause and activity, a consistent taxonomy for what counts as a factor, a second reviewer labelling a subset to measure agreement, and a check that factor wording does not simply follow the investigating company's reporting template. Incidents with pending investigations must be excluded or tracked separately, as this report does."];
+
+writelines(lines, fullfile(out, "report.md"));
+end
+
+function s = describeTop(t)
+if height(t) == 0
+    s = "none";
+else
+    s = t.Factor(1) + " (" + t.Count(1) + ")";
+end
+end
+
