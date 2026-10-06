@@ -1,0 +1,115 @@
+classdef IOGPPipelineTest < matlab.unittest.TestCase
+
+    properties
+        Cfg
+        Text
+        Incidents
+    end
+
+    methods (TestClassSetup)
+        function setupPath(tc)
+            root = fileparts(fileparts(mfilename("fullpath")));
+            addpath(fullfile(root, "src"));
+            tc.addTeardown(@rmpath, fullfile(root, "src"));
+        end
+    end
+
+    methods (TestMethodSetup)
+        function load(tc)
+            cfg = iogpConfig();
+            cfg.showFigures = false;
+            cfg.resultsDir = tempname;
+            tc.Cfg = cfg;
+            tc.Text = loadReport(cfg);
+            tc.Incidents = parseIncidents(tc.Text, cfg);
+        end
+    end
+
+    methods (Test)
+        function parsesAllIncidentsAndFatalities(tc)
+            tc.verifyEqual(height(tc.Incidents), 14);
+            tc.verifyEqual(sum(tc.Incidents.Deaths), 17);
+            tc.verifyFalse(any(ismissing(tc.Incidents.Date)));
+        end
+
+        function carriesRegionAndSettingDown(tc)
+            T = tc.Incidents;
+            tc.verifyEqual(T.Region(1), "AFRICA");
+            tc.verifyEqual(T.Setting(1), "ONSHORE");
+            tc.verifyEqual(T.Setting(2), "OFFSHORE");
+            tc.verifyEqual(T.Region(end), "SOUTH AMERICA");
+            tc.verifyEqual(sum(T.Setting == ""), 0);
+        end
+
+        function extractsFieldsWithoutLeakingHeadings(tc)
+            T = tc.Incidents;
+            tc.verifyEqual(T.Country(1), "Nigeria");
+            tc.verifyEqual(T.Cause(1), "Struck by");
+            tc.verifyEqual(T.LifeSavingRule(1), "Safe mechanical lifting");
+            tc.verifyFalse(any(contains(T.CausalFactors, "AFRICA")));
+            tc.verifyFalse(any(contains(T.CausalFactors, "Offshore")));
+        end
+
+        function totalsMatchReport(tc)
+            check = validateTotals(tc.Text, tc.Incidents, tc.Cfg);
+            tc.verifyEqual(check.ExpectedIncidents, 14);
+            tc.verifyEqual(check.ExpectedFatalities, 17);
+            tc.verifyTrue(check.Match);
+        end
+
+        function totalsMismatchWarns(tc)
+            cfg = tc.Cfg;
+            cfg.expectedIncidents = 15;
+            cfg.expectedFatalities = 17;
+            tc.verifyWarning(@() validateTotals(tc.Text, tc.Incidents, cfg), "iogp:totals");
+        end
+
+        function countsCausalFactors(tc)
+            F = parseCausalFactors(tc.Incidents, tc.Cfg);
+            tc.verifyEqual(F.PeopleCount(1), 3);
+            tc.verifyEqual(F.ProcessCount(1), 2);
+            tc.verifyEqual(F.Attribution(1), "People-dominant");
+            tc.verifyEqual(F.Attribution(2), "Process-dominant");
+            tc.verifyEqual(sum(F.PeopleCount), 23);
+            tc.verifyEqual(sum(F.ProcessCount), 35);
+        end
+
+        function handlesUnallocatedFactors(tc)
+            F = parseCausalFactors(tc.Incidents, tc.Cfg);
+            tc.verifyEqual(sum(F.Attribution == "Not allocated"), 1);
+            tc.verifyEqual(F.PeopleCount(F.Attribution == "Not allocated"), 0);
+        end
+
+        function wrappedBulletsJoinIntoOneFactor(tc)
+            T = table("PEOPLE (ACTS)" + newline + "- First part of a" + newline + "second line" + newline + ...
+                "- Another" + newline + "PROCESS (CONDITIONS)" + newline + "- One", "VariableNames", {'CausalFactors'});
+            F = parseCausalFactors(T, tc.Cfg);
+            tc.verifyEqual(F.PeopleCount, 2);
+            tc.verifyTrue(contains(F.PeopleFactors, "First part of a second line"));
+        end
+
+        function keywordClassifierMatchesMostCauses(tc)
+            C = classifyByKeyword(tc.Incidents, tc.Cfg);
+            tc.verifyGreaterThanOrEqual(mean(C.Correct), 0.9);
+            tc.verifyEqual(sum(~C.Correct), 1);
+        end
+
+        function preprocessingRemovesStopWordsAndShortWords(tc)
+            [docs, bag] = preprocessNarratives(tc.Incidents, tc.Cfg);
+            tc.verifyGreaterThan(bag.NumWords, 20);
+            tc.verifyFalse(ismember("the", string(bag.Vocabulary)));
+            tc.verifyEqual(numel(docs), 14);
+        end
+
+        function endToEndWritesOutputs(tc)
+            results = runIOGPPipeline(tc.Cfg);
+            tc.verifyTrue(results.Check.Match);
+            tc.verifyTrue(isfile(fullfile(tc.Cfg.resultsDir, "incidents.csv")));
+            tc.verifyTrue(isfile(fullfile(tc.Cfg.resultsDir, "report.md")));
+            tc.verifyTrue(isfile(fullfile(tc.Cfg.resultsDir, "fig09_people_vs_process.png")));
+            tc.verifyGreaterThanOrEqual(height(results.Captions), 8);
+        end
+    end
+end
+
+
