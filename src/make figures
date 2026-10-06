@@ -1,0 +1,153 @@
+function captions = makeFigures(cfg, T, docs, bag, C, S)
+%MAKEFIGURES Create, save, and caption every figure; returns a table of file names and one-sentence claims.
+
+if ~isfolder(cfg.resultsDir)
+    mkdir(cfg.resultsDir);
+end
+names = strings(0, 1);
+claims = strings(0, 1);
+
+byCause = sortrows(groupsummary(T, "Cause", "sum", "Deaths"), "sum_Deaths", "descend");
+byActivity = sortrows(groupsummary(T, "Activity", "sum", "Deaths"), "sum_Deaths", "descend");
+total = sum(T.Deaths);
+
+top3 = topkwords(bag, 3);
+f = newFigure(cfg, [100 100 700 500]);
+wordcloud(bag);
+title("Narrative word cloud");
+[names, claims] = save(cfg, f, "fig01_wordcloud", names, claims, ...
+    "The narratives are dominated by " + strjoin(string(top3.Word)', ", ") + ".");
+
+top = topkwords(bag, cfg.topWords);
+f = newFigure(cfg, [100 100 700 500]);
+barh(flipud(top.Count));
+yticks(1:height(top));
+yticklabels(flipud(top.Word));
+xlabel("Occurrences");
+title("Most frequent narrative words");
+[names, claims] = save(cfg, f, "fig02_topwords", names, claims, ...
+    "'" + top.Word(1) + "' is the most frequent narrative word with " + top.Count(1) + " occurrences.");
+
+causes = byCause.Cause(1:min(cfg.topCauses, height(byCause)));
+f = newFigure(cfg, [100 100 1000 700]);
+tl = tiledlayout(f, 2, 2, "TileSpacing", "compact");
+for c = 1:numel(causes)
+    idx = T.Cause == causes(c);
+    b = removeInfrequentWords(bagOfWords(docs(idx)), 1);
+    if b.NumWords == 0
+        continue
+    end
+    nexttile(tl);
+    wordcloud(b);
+    title(causes(c) + " (" + sum(idx) + ")");
+end
+[names, claims] = save(cfg, f, "fig03_wordclouds_by_cause", names, claims, ...
+    "Vocabulary differs by cause, so narrative wording carries signal about the reported cause.");
+
+f = newFigure(cfg, [100 100 1100 450]);
+tl = tiledlayout(f, 1, 2, "TileSpacing", "compact");
+nexttile(tl);
+barh(flipud(byCause.sum_Deaths));
+yticks(1:height(byCause));
+yticklabels(flipud(byCause.Cause));
+xlabel("Fatalities");
+title("By cause");
+nexttile(tl);
+barh(flipud(byActivity.sum_Deaths));
+yticks(1:height(byActivity));
+yticklabels(flipud(byActivity.Activity));
+xlabel("Fatalities");
+title("By activity");
+for ax = findall(f, "Type", "axes")'
+    ax.TickLabelInterpreter = "none";
+end
+[names, claims] = save(cfg, f, "fig04_fatalities_by_cause_activity", names, claims, ...
+    byCause.Cause(1) + " causes the most fatalities (" + byCause.sum_Deaths(1) + " of " + total + ...
+    "), and " + byActivity.Activity(1) + " is the deadliest activity (" + byActivity.sum_Deaths(1) + ").");
+
+f = newFigure(cfg, [100 100 900 550]);
+h = heatmap(f, T, "Activity", "Cause", "ColorVariable", "Deaths", "ColorMethod", "sum");
+h.Title = "Fatalities by cause and activity";
+pair = groupsummary(T, {'Cause', 'Activity'}, "sum", "Deaths");
+[~, ix] = max(pair.sum_Deaths);
+[names, claims] = save(cfg, f, "fig05_heatmap_cause_activity", names, claims, ...
+    "The largest cell is " + pair.Cause(ix) + " during " + pair.Activity(ix) + " with " + pair.sum_Deaths(ix) + " fatalities.");
+
+try
+    byCountry = groupsummary(T, "Country", "sum", "Deaths");
+    coords = readtable(cfg.coordinatesFile, "TextType", "string");
+    G = innerjoin(byCountry, coords, "Keys", "Country");
+    f = newFigure(cfg, [100 100 900 550]);
+    gb = geobubble(f, G, "Latitude", "Longitude", "SizeVariable", "sum_Deaths");
+    gb.Title = "Fatalities by country";
+    [~, ic] = max(G.sum_Deaths);
+    [names, claims] = save(cfg, f, "fig06_geobubble", names, claims, ...
+        G.Country(ic) + " has the most fatalities among mapped countries (" + G.sum_Deaths(ic) + ").");
+catch ME
+    warning("iogp:geobubble", "Skipping geobubble: %s", ME.message);
+end
+
+g = groupsummary(T(T.Setting ~= "" & T.Region ~= "", :), {'Region', 'Setting'}, "sum", "Deaths");
+M = unstack(g(:, {'Region', 'Setting', 'sum_Deaths'}), "sum_Deaths", "Setting");
+M = fillmissing(M, "constant", 0, "DataVariables", @isnumeric);
+vals = M{:, 2:end};
+f = newFigure(cfg, [100 100 800 500]);
+bar(categorical(M.Region), vals, "stacked");
+legend(M.Properties.VariableNames(2:end), "Location", "northeast");
+ylabel("Fatalities");
+title("Onshore versus offshore fatalities by region");
+[~, ir] = max(sum(vals, 2));
+onshore = sum(T.Deaths(T.Setting == "ONSHORE"));
+[names, claims] = save(cfg, f, "fig07_onshore_offshore", names, claims, ...
+    M.Region(ir) + " has the most fatalities by region, and onshore work accounts for " + onshore + " of " + total + ".");
+
+cats = union(T.Cause, C.PredictedCause);
+f = newFigure(cfg, [100 100 800 650]);
+cm = confusionchart(categorical(T.Cause, cats), categorical(C.PredictedCause, cats));
+cm.Title = "Keyword theme versus reported cause";
+[names, claims] = save(cfg, f, "fig08_confusion", names, claims, ...
+    "Keyword rules recover the reported cause for " + sum(C.Correct) + " of " + height(T) + " incidents (" + ...
+    round(100 * mean(C.Correct)) + "%).");
+
+f = newFigure(cfg, [100 100 1100 500]);
+tl = tiledlayout(f, 1, 2, "TileSpacing", "compact");
+nexttile(tl);
+bar(categorical(S.ByCause.Cause), [S.ByCause.sum_PeopleCount, S.ByCause.sum_ProcessCount], "stacked");
+legend(["People (acts)", "Process (conditions)"], "Location", "northwest");
+ylabel("Causal factors");
+title("By cause");
+nexttile(tl);
+bar(categorical(S.ByActivity.Activity), [S.ByActivity.sum_PeopleCount, S.ByActivity.sum_ProcessCount], "stacked");
+ylabel("Causal factors");
+title("By activity");
+for ax = findall(f, "Type", "axes")'
+    ax.TickLabelInterpreter = "none";
+end
+side = "process";
+if S.TotalPeople > S.TotalProcess
+    side = "people";
+end
+[names, claims] = save(cfg, f, "fig09_people_vs_process", names, claims, ...
+    "Investigators list " + S.TotalProcess + " process factors against " + S.TotalPeople + ...
+    " people factors, so " + side + " factors dominate the allocated records.");
+
+captions = table(names, claims, "VariableNames", {'Figure', 'Claim'});
+end
+
+function f = newFigure(cfg, pos)
+vis = "off";
+if cfg.showFigures
+    vis = "on";
+end
+f = figure("Visible", vis, "Position", pos);
+end
+
+function [names, claims] = save(cfg, f, name, names, claims, claim)
+exportgraphics(f, fullfile(cfg.resultsDir, name + ".png"), "Resolution", 150);
+names(end+1, 1) = name + ".png";
+claims(end+1, 1) = claim;
+if ~cfg.showFigures
+    close(f);
+end
+end
+
